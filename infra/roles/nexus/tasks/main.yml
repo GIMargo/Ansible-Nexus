@@ -1,0 +1,11 @@
+- name: Install requirements for Nexus
+  include_tasks: install_preq.yml
+
+- name: Install or upgrade Nexus
+  include_tasks: main_install_upgrade.yml
+
+- name: Run all handlers
+  ansible.builtin.meta: flush_handlers 
+
+- name: Post install step
+  include_tasks: post_install.yml

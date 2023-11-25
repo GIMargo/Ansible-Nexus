@@ -1,0 +1,132 @@
+- name: Generate full path to nexus
+  set_fact:
+    nexus_real_path: "{{ nexus_install_dir }}/nexus"
+
+- name: Get current nexus version
+  ansible.builtin.stat:
+    path: "{{ nexus_real_path }}"
+  register: st
+
+- name: Extract version from local path
+  set_fact:
+    nexus_local_version: "{{ st.stat.lnk_target | regex_search (regexp,'\\1') | first }}"
+  vars:
+    regexp: 'nexus-(\d+\.\d+\.\d+-\d+)'
+  when: 
+    - st.stat.exists
+
+- name: Register full nexus tarball url
+  ansible.builtin.uri:
+    url: "{{ nexus_download_url }}"
+    method: CONNECT
+    status_code: 302
+  check_mode: false
+  register: full_url
+
+- name: Extract version from remote URL
+  set_fact:
+    nexus_latest_version: "{{ full_url.location | regex_search (regexp,'\\1') | first }}"
+  vars:
+    regexp: '^https://.*nexus-(\d+\.\d+\.\d+-\d+)-unix\.tar\.gz'
+
+- name: Upgrade if versions differ or nexus not exists
+  set_fact:
+    upgrade_cond: true
+  when: (nexus_local_version != nexus_latest_version and nexus_upgrade) or (st.stat.exists == false)
+
+- name: Download nexus distrib
+  ansible.builtin.get_url:
+    url: "{{ nexus_download_url }}"
+    dest: "{{ nexus_install_dir }}"
+  when: 
+    - upgrade_cond | default(false)
+    - not ansible_check_mode
+
+- name: Unpack nexus latest-unix.tar.gz to opt
+  ansible.builtin.unarchive:
+    src: "{{ nexus_real_path }}-{{ nexus_latest_version }}-unix.tar.gz"
+    dest: "{{ nexus_install_dir }}"
+    remote_src: yes
+  when:
+    - upgrade_cond | default(false)
+    - not ansible_check_mode
+
+- name: Create a symbolic link to nexus directory
+  ansible.builtin.file:
+    src: "{{ nexus_real_path }}-{{ nexus_latest_version }}"
+    dest: "{{ nexus_real_path }}"
+    state: link
+  when:
+    - upgrade_cond | default(false)
+    - not ansible_check_mode
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Change Xms in /nexus/bin/nexus.vmoptions
+  ansible.builtin.lineinfile:
+    path: "{{ nexus_real_path }}/bin/nexus.vmoptions"
+    regexp: '^-Xms'
+    line: '-Xms{{ nexus_memory_size }}'
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Change Xmx in /nexus/bin/nexus.vmoptions
+  ansible.builtin.lineinfile:
+    path: "{{ nexus_real_path }}/bin/nexus.vmoptions"
+    regexp: '^-Xmx'
+    line: '-Xmx{{ nexus_memory_size }}'
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Change XX:MaxDirectMemorySize in /nexus/bin/nexus.vmoptions
+  ansible.builtin.lineinfile:
+    path: "{{ nexus_real_path }}/bin/nexus.vmoptions"
+    regexp: '^-XX:MaxDirectMemorySize'
+    line: '-XX:MaxDirectMemorySize={{ nexus_memory_size }}'
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Replace JAVA_HOME_OVERRIDE
+  ansible.builtin.lineinfile:
+    path: "{{ nexus_real_path }}/bin/nexus"
+    regexp: '^[#]? *INSTALL4J_JAVA_HOME_OVERRIDE'
+    line: 'INSTALL4J_JAVA_HOME_OVERRIDE=/usr/lib/jvm/java-8-openjdk-amd64'
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Copy nexus /etc/systemd/system/nexus.service
+  ansible.builtin.template:
+    src: nexus.service.j2
+    dest: /etc/systemd/system/nexus.service
+    group: root
+    owner: root
+    mode: 0644
+  notify:
+      - Restart nexus
+      - nexus wait port
+
+- name: Reload systemd units and enable nexus startup
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: nexus
+    enabled: true
+
+- name: Add user nexus
+  ansible.builtin.user:
+    name: "{{ nexus_user }}"
+    shell: /usr/sbin/nologin
+
+- name: Change nexus folders owner
+  ansible.builtin.file:
+    path: "{{ nexus_install_dir }}/{{ item }}/"
+    owner: "{{ nexus_user }}"
+    group: "{{ nexus_group }}"
+    recurse: yes
+  loop:
+    - "nexus"
+    - "sonatype-work"

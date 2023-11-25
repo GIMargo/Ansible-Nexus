@@ -1,0 +1,7 @@
+nexus_install_dir: "/opt"
+nexus_upgrade: false
+nexus_user: "nexus"
+nexus_group: "{{ nexus_user }}"
+nexus_domain: "nexus.develop.local"
+nexus_memory_size: "768m"
+nexus_download_url: "https://download.sonatype.com/nexus/3/latest-unix.tar.gz"

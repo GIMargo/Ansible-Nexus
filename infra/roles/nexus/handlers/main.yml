@@ -1,0 +1,9 @@
+- name: Restart nexus
+  ansible.builtin.service:
+    name: nexus
+    state: restarted
+
+- name: nexus wait port
+  wait_for:
+    port: 8081
+    timeout: 800

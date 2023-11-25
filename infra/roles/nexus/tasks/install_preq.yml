@@ -1,0 +1,11 @@
+- name: Add non-free system repository
+  ansible.builtin.apt_repository:
+    repo: deb http://deb.debian.org/debian/ bookworm main non-free-firmware non-free contrib
+    state: present
+
+- name: Install openjdk-8
+  ansible.builtin.apt:
+    name:
+      - nvidia-openjdk-8-jre
+      - ca-certificates-java
+    state: present

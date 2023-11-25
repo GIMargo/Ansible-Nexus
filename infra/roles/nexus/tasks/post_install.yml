@@ -1,0 +1,33 @@
+- name: Copy nexus site config from template
+  ansible.builtin.template:
+    src: nexus.j2
+    dest: /etc/nginx/sites-available/nexus
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - Reload nginx
+
+- name: Enable nexus site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/nexus
+    dest: /etc/nginx/sites-enabled/nexus
+    state: link
+  notify:
+    - Reload nginx
+
+- name: Add nexus IP to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: '{{ ansible_default_ipv4.address }}	{{ nexus_domain }}'
+
+- name: Check if admin.password file exists
+  stat:
+    path: "{{ nexus_install_dir }}/sonatype-work/nexus3/admin.password"
+  register: admin_password_file
+
+- name: Save content admin.password to var
+  slurp:
+    src: '{{ nexus_install_dir }}/sonatype-work/nexus3/admin.password'
+  register: default_admin_password
+  when: admin_password_file.stat.exists
